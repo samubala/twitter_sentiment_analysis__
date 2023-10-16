@@ -1,53 +1,73 @@
 import pandas as pd
-import streamlit as st
 from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import make_column_transformer
+from sklearn.decomposition import PCA
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import r2_score
+import streamlit as st
 
-# read CSV file and create independent and dependent variables
-Twitter_DF = pd.read_csv(r'C:\Users\samub\final project-twitter_sentiment_analysis\TWITTER_SENTIMENT_ANALYSIS_PROCESSED_2000.csv')
+# Load the dataset
+Guvi_DF_CLEAN = pd.read_csv(r'C:\Users\samub\Guvi-Ratings\RATINGS_OF_GUVI_COURSES_CLEANED_DATA.csv')
 
-# recognise independent and dependent features
-Independent_var = Twitter_DF['text']
-Dependent_var = Twitter_DF['final_target']
+# Split data into features and target
+X = Guvi_DF_CLEAN[['price', 'num_subscribers', 'num_reviews', 'num_lectures', 'content_duration', 'level', 'subject']]
+y = Guvi_DF_CLEAN['Rating']
 
-# split data into training and testing sets
-IV_train, IV_test, DV_train, DV_test = train_test_split(Independent_var, Dependent_var, test_size=0.1, random_state=225)
+# Split data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# create a TfidfVectorizer object and a LogisticRegression object
-tvec = TfidfVectorizer()
-clf2 = LogisticRegression(solver="lbfgs", max_iter=200000)
+# Preprocess the data
+numeric_features = ['price', 'num_subscribers', 'num_reviews', 'num_lectures', 'content_duration']
+numeric_transformer = make_pipeline(StandardScaler(), PCA(n_components=4))
 
-# create a pipeline with the vectorizer and classifier objects
-model = Pipeline([('vectorizer',tvec),('classifier',clf2)])
+categorical_features = ['level', 'subject']
+categorical_transformer = make_pipeline(OneHotEncoder(handle_unknown='ignore'))
 
-# fit the model on the training set
-model.fit(IV_train, DV_train)
+preprocessor = make_column_transformer(
+    (numeric_transformer, numeric_features),
+    (categorical_transformer, categorical_features)
+)
 
-# make predictions on the test set
-predictions = model.predict(IV_test)
+# Create a pipeline to preprocess and train the model
+pipe = make_pipeline(preprocessor, RandomForestRegressor(n_estimators=100, random_state=42))
 
-# create a Streamlit app
-st.title("Twitter Sentiment Analysis")
+# Train the model
+pipe.fit(X_train, y_train)
 
-# create a text input for the user to enter a tweet
-user_input = st.text_input("ENTER A TWEET: ")
+# Make predictions on test data
+y_pred = pipe.predict(X_test)
 
-# if the user has entered some text, make a prediction and print the result
-if user_input:
-    result = model.predict([user_input])[0]
-    sentiment = "Positive" if result == 2 else "Negative"
-    st.write(f"### PREDICTED SENTIMENT: {sentiment}")
+# Evaluate the model performance
+print('R-squared score:', r2_score(y_test, y_pred))
 
-    # print accuracy, precision, recall
-    accuracy = accuracy_score(predictions, DV_test)
-    precision = precision_score(predictions, DV_test, average='weighted')
-    recall = recall_score(predictions, DV_test, average='weighted')
-    f1 = f1_score(predictions, DV_test, average='weighted')
-    st.write("### PERFORMANCE METRICS")
-    st.write(f"Accuracy: {accuracy:.2f}")
-    st.write(f"Precision: {precision:.2f}")
-    st.write(f"Recall: {recall:.2f}")
-    st.write(f"### F1 SCORE: {f1:.2f}")
+# Streamlit app
+st.title('GUVI Rating Prediction')
+st.write('Enter the course details to predict its rating:')
+
+# Get user input
+price = st.slider('Price', min_value=0, max_value=200, value=100, step=1)
+num_subscribers = st.slider('Number of Subscribers', min_value=0, max_value=300000, value=5000, step=10)
+num_reviews = st.slider('Number of Reviews', min_value=0, max_value=30000, value=100, step=1)
+num_lectures = st.slider('Number of Lectures', min_value=0, max_value=800, value=50, step=1)
+content_duration = st.slider('Content Duration (in minutes)', min_value=0, max_value=100, value=35, step=1)
+level = st.selectbox('Course Level', ['All Levels', 'Beginner Level', 'Intermediate Level', 'Expert Level'])
+subject = st.selectbox('Course Subject', ['Business Finance', 'Graphic Design', 'Musical Instruments', 'Web Development'])
+
+# Create a DataFrame for user input
+input_df = pd.DataFrame({
+    'price': [price],
+    'num_subscribers': [num_subscribers],
+    'num_reviews': [num_reviews],
+    'num_lectures': [num_lectures],
+    'content_duration': [content_duration],
+    'level': [level],
+    'subject': [subject]
+})
+
+# Make prediction using transformed input
+prediction = pipe.predict(input_df)[0]
+
+# Display predicted rating
+st.write('Predicted Rating:', prediction)
